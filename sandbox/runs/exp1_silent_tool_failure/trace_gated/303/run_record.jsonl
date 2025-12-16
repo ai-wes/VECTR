@@ -1,0 +1,8 @@
+[
+  {
+    "tool": "scenario",
+    "exp": "exp1_silent_tool_failure",
+    "mode": "trace_gated",
+    "seed": 303
+  }
+]

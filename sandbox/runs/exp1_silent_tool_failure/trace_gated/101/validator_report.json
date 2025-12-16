@@ -1,0 +1,14 @@
+{
+  "id_check": {
+    "missing": [
+      "PAT-EMPTY"
+    ],
+    "present": []
+  },
+  "time_leaks": [],
+  "unsupported_claims": [
+    false
+  ],
+  "contradictions": [],
+  "red_flag_recall": null
+}
