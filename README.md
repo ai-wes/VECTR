@@ -17,7 +17,6 @@ The top‑level layout of this repository is organised as follows:
 ├── sandbox/              # Python source code for the citation pipeline and sandbox experiments
 │   ├── adapters/         # Adapters for external tools such as citation parsing
 │   ├── agents/           # Autogen agent definitions and harness logic
-│   ├── bert/             # Optional natural language inference models for faithfulness checking
 │   ├── claims/           # Claim extraction utilities
 │   ├── config.yaml       # Configuration for sandbox experiments (decision date, fault injection, etc.)
 │   ├── evidence/         # Example evidence store snapshots used by the sandbox
