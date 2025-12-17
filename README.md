@@ -17,6 +17,17 @@ Economic analysis in the paper is a parameterized value-of-information
 calculation using these measured overheads.
 
 
+## Run Record Schema
+
+Each run record contains:
+
+- task_id: adversarial prompt identifier
+- condition: baseline | vectr
+- latency_s: wall-clock latency
+- tool_call_count: number of external tool invocations
+- llm_audit.parsed: structured reliability labels
+
+This schema enables independent re-analysis without access to model internals.
 
 
 schema:
