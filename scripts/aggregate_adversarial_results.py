@@ -27,24 +27,12 @@ def safe_get(d: Dict[str, Any], path: List[str], default=None):
     return cur if cur is not None else default
 
 
-def parse_llm_audit(rec: Dict[str, Any]) -> Dict[str, Any]:
-    audit_ok = safe_get(rec, ["llm_audit", "ok"], False)
-    parsed = safe_get(rec, ["llm_audit", "parsed"], None)
+def parse_audit(rec: Dict[str, Any]) -> Dict[str, Any]:
+    audit_ok = safe_get(rec, ["audit", "ok"], False)
+    parsed = safe_get(rec, ["audit", "parsed"], None)
     if not audit_ok or not isinstance(parsed, dict):
-        return {
-            "citation_present": None,
-            "citation_resolvable": None,
-            "fabricated_details": None,
-            "page_or_section_hallucinated": None,
-            "overall_risk": None,
-        }
-    return {
-        "citation_present": parsed.get("citation_present"),
-        "citation_resolvable": parsed.get("citation_resolvable"),
-        "fabricated_details": parsed.get("fabricated_details"),
-        "page_or_section_hallucinated": parsed.get("page_or_section_hallucinated"),
-        "overall_risk": parsed.get("overall_risk"),
-    }
+        return None
+    return parsed
 
 
 def resolver_success_rate(resolver: Optional[Dict[str, Any]]) -> Optional[float]:
@@ -92,7 +80,7 @@ def main() -> None:
 
     rows = []
     for r in records:
-        audit = parse_llm_audit(r)
+        audit = parse_audit(r)
         rows.append({
             "task_id": r.get("task_id"),
             "condition": r.get("condition"),
