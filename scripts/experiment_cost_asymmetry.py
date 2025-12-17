@@ -1,18 +1,24 @@
 """
 Experiment C — Cost-asymmetry micro-model (v2, coherent)
-This script performs a parameterized value-of-information analysis.
 
-Inputs:
-- Measured verification overhead from aggregate.csv
+Input:
+- runs.jsonl from adversarial_citation_pipeline.py
 
-Outputs:
-- Break-even error reduction thresholds
+Output:
+- measured_overhead_summary.json
+- break_even_sensitivity_table.md + .csv
 
+Key ideas:
+- Compute empirical deltas between baseline and vectr per task.
+- Estimate incremental verification cost C_v per packet as:
+  C_v = (Δtool_calls * $/tool_call) + (Δtokens * $/token) + (Δlatency_s * $/s)
 
-This analysis does NOT use downstream outcome data.
-It does NOT claim real-world cost savings.
-"""
+- Produce a sensitivity grid:
+  rows: downstream loss C_e tiers
+  cols: C_v tiers (including measured tools-only lower bound + configurable tiers)
+  cells: break-even errors prevented per 1M packets ( = (C_v/C_e) * 1e6 )
 
+This is parameterized (no universal ROI claim).
 """
 
 from __future__ import annotations
