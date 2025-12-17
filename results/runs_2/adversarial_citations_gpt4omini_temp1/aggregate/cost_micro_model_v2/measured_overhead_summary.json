@@ -1,0 +1,14 @@
+{
+  "n_tasks_paired": 22,
+  "usd_per_tool_call": 0.002,
+  "usd_per_1m_tokens": 10.0,
+  "usd_per_hour_time": 0.0,
+  "mean_delta_tool_calls": 1.4090909090909092,
+  "mean_delta_latency_s": 4.890475814992731,
+  "mean_delta_tokens": 2035.7727272727273,
+  "Cv_tools_only_measured_usd": 0.002818181818181818,
+  "Cv_time_component_usd": 0.0,
+  "Cv_token_component_usd": 0.020357727272727274,
+  "Cv_full_measured_usd": 0.02317590909090909,
+  "note": "Cv_tools_only is a conservative lower bound if token/time costs are set to 0 or missing."
+}
