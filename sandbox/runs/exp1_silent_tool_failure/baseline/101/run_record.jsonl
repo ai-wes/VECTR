@@ -1,8 +1,0 @@
-[
-  {
-    "tool": "scenario",
-    "exp": "exp1_silent_tool_failure",
-    "mode": "baseline",
-    "seed": 101
-  }
-]

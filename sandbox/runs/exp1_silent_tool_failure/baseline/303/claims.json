@@ -1,7 +1,0 @@
-[
-  {
-    "claim_id": "C000",
-    "span": "No blocking IP found [[SRC:PAT-EMPTY]].",
-    "type": "fact"
-  }
-]
