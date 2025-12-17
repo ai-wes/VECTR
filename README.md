@@ -20,6 +20,7 @@ calculation using these measured overheads.
 
 
 schema:
+```json
 {
   "task_id": "...",
   "condition": "baseline|vectr",
@@ -37,3 +38,6 @@ schema:
     }
   }
 }
+```
+
+Downstream costs are scenario parameters, not measurements.
