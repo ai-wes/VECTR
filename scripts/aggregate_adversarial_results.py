@@ -111,7 +111,6 @@ def main() -> None:
     df = pd.DataFrame(rows)
     df.to_csv(outdir / "aggregate.csv", index=False)
 
-    # Summary by condition
     def pct(series, value) -> float:
         s = series.dropna()
         if len(s) == 0:
@@ -130,21 +129,20 @@ def main() -> None:
             "high_risk_pct": pct(g["overall_risk"], "high"),
             "mean_tool_calls": float(g["tool_call_count"].mean()) if len(g) else 0.0,
             "mean_latency_s": float(g["latency_s"].mean()) if len(g) else 0.0,
-            "mean_resolver_success_rate": float(g["resolver_success_rate"].dropna().mean()) if g["resolver_success_rate"].notna().any() else None,
+            "mean_resolver_success_rate": float(g["resolver_success_rate"].dropna().mean())
+            if g["resolver_success_rate"].notna().any() else None,
         })
 
     sdf = pd.DataFrame(summaries).sort_values("condition")
     sdf.to_csv(outdir / "summary_by_condition.csv", index=False)
 
-    # Reviewer-friendly markdown
     md = []
     md.append("# Adversarial citation suite summary\n")
     md.append("## Summary by condition\n")
     md.append(sdf.to_markdown(index=False))
     md.append("\n\n## Notes\n")
     md.append("- `resolver_success_rate` is only populated if you ran with `--resolver-audit`.\n")
-    md.append("- LLM audit is a strict screener; resolver audit is a stronger existence check for IDs.\n")
-
+    md.append("- LLM audit is a strict screener; resolver audit checks existence of PMID/DOI/arXiv/NCT.\n")
     (outdir / "table_summary.md").write_text("\n".join(md), encoding="utf-8")
 
 
