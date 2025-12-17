@@ -343,7 +343,7 @@ Return JSON only with:
 """
 
 
-async def llm_audit(
+async def audit(
     *,
     model_client: OpenAIChatCompletionClient,
     task_text: str,
@@ -687,7 +687,7 @@ async def run_one_task(
     usage = try_extract_usage(result)
 
     # LLM audit
-    audit = await llm_audit(
+    audit = await audit(
         model_client=audit_client,
         task_text=task_text,
         assistant_response=final_text,
@@ -722,7 +722,7 @@ async def run_one_task(
         "messages": messages,
         "assistant_response": final_text,
         "usage": usage,
-        "llm_audit": audit,
+        "audit": audit,
         "resolver_audit": resolver,
     }
     return record
