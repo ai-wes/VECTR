@@ -1,0 +1,7 @@
+ddgs
+python-dotenv
+httpx
+pandas
+
+autogen-agentchat
+autogen-ext
