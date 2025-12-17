@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -38,6 +39,7 @@ from dotenv import load_dotenv
 # Autogen imports (same as your current code)
 from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_core.models import ModelFamily
 
 
 # =============================================================================
@@ -251,19 +253,27 @@ def make_logged_tool(
     truncate_chars: int = 2500,
 ) -> Callable[[str], str]:
     """
-    Wrap a tool function so we capture query, duration, and output (truncated).
-    Autogen tool interface expects a regular callable.
+    Wrap a tool function so we capture query, duration, and output.
+    This returns an ASYNC tool, even if tool_fn is sync, by running sync calls in a thread.
     """
-    def wrapped(query: Annotated[str, "The search query string"]) -> Annotated[str, "The search results"]:
+
+    async def wrapped(query: Annotated[str, "The search query string"]) -> Annotated[str, "The search results"]:
         t0 = time.time()
+        ok = True
+        err = None
+        out = ""
+
         try:
-            out = tool_fn(query)
-            ok = True
-            err = None
+            if inspect.iscoroutinefunction(tool_fn):
+                out = await tool_fn(query)  # type: ignore[misc]
+            else:
+                # DDGS is sync -> run in worker thread so we don't block the event loop
+                out = await asyncio.to_thread(tool_fn, query)
         except Exception as e:
-            out = f"ERROR: {e}"
             ok = False
             err = str(e)
+            out = f"ERROR: {e}"
+
         t1 = time.time()
 
         tool_log.append({
@@ -275,8 +285,11 @@ def make_logged_tool(
             "output_truncated": (out[:truncate_chars] + "…") if len(out) > truncate_chars else out,
             "timestamp": utc_now_iso(),
         })
+
         return out
 
+    # Give autogen a stable function name (so tool calls don't all show up as "wrapped")
+    wrapped.__name__ = tool_name
     return wrapped
 
 
@@ -287,6 +300,10 @@ def create_agent(
     system_message: str,
     tool_log: List[Dict[str, Any]],
 ) -> AssistantAgent:
+    """
+    Create a fresh AssistantAgent for each task.
+    Each task is a one-off conversation with no history accumulation.
+    """
     logged_search = make_logged_tool(ddgs_search, "ddgs_search", tool_log)
     return AssistantAgent(
         name=name,
@@ -496,6 +513,7 @@ class RunConfig:
     include_resolver_audit: bool
     audit_model: str
     audit_temperature: float
+    provider: str  # "openai", "openrouter", or "groq"
 
 
 def normalize_messages(messages: Any) -> List[Dict[str, Any]]:
@@ -547,6 +565,94 @@ def try_extract_usage(result_obj: Any) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
     return None
+
+
+def create_model_client(
+    *,
+    provider: str,
+    model: str,
+    temperature: float,
+) -> OpenAIChatCompletionClient:
+    """
+    Create a model client for the specified provider.
+    
+    Args:
+        provider: "openai", "openrouter", or "groq"
+        model: Model name
+            - OpenAI: e.g., "gpt-4o", "gpt-4o-mini"
+            - OpenRouter: e.g., "openai/gpt-4o", "anthropic/claude-3-opus"
+            - Groq: e.g., "llama-3.1-70b-versatile", "mixtral-8x7b-32768", "gemma2-9b-it"
+        temperature: Generation temperature
+        
+    Returns:
+        OpenAIChatCompletionClient configured for the provider
+    """
+    if provider == "openai":
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is not set (needed for OpenAI provider).")
+        return OpenAIChatCompletionClient(
+            model=model,
+            api_key=api_key,
+            temperature=temperature,
+        )
+    elif provider == "openrouter":
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENROUTER_API_KEY is not set (needed for OpenRouter provider).")
+        # OpenRouter uses OpenAI-compatible API with different base URL
+        # Provide model_info for non-OpenAI models
+        return OpenAIChatCompletionClient(
+            model=model,
+            api_key=api_key,
+            temperature=temperature,
+            base_url="https://openrouter.ai/api/v1",
+            model_info={
+                "vision": False,
+                "function_calling": True,
+                "json_output": True,
+                "family": ModelFamily.UNKNOWN,
+                "structured_output": True,
+            },
+        )
+    elif provider == "groq":
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise RuntimeError("GROQ_API_KEY is not set (needed for Groq provider).")
+        # Groq uses OpenAI-compatible API with different base URL
+        # IMPORTANT: Only specific Groq models support function calling for tool use:
+        # - llama3-groq-70b-8192-tool-use-preview
+        # - llama3-groq-8b-8192-tool-use-preview
+        # Regular Llama models (llama-3.1-70b-versatile, llama-3.1-8b-instant, etc.)
+        # do NOT support OpenAI-style function calling and will fail with tool calls.
+        # Check if model name indicates tool-use support
+        supports_function_calling = "tool-use" in model.lower()
+        
+        if not supports_function_calling:
+            raise ValueError(
+                f"Model '{model}' does not support function calling/tool use. "
+                "This pipeline requires tool use for web search. "
+                "Please use a Groq model that supports function calling:\n"
+                "  - llama3-groq-70b-8192-tool-use-preview\n"
+                "  - llama3-groq-8b-8192-tool-use-preview\n\n"
+                "Or use a different provider (openai or openrouter) that supports function calling."
+            )
+        
+        return OpenAIChatCompletionClient(
+            model=model,
+            api_key=api_key,
+            temperature=temperature,
+            base_url="https://api.groq.com/openai/v1",
+            model_info={
+                "vision": False,
+                "function_calling": True,
+                "json_output": True,
+                "family": ModelFamily.UNKNOWN,
+                "structured_output": True,
+            },
+        )
+    else:
+        raise ValueError(f"Unknown provider: {provider}. Must be 'openai', 'openrouter', or 'groq'.")
 
 
 async def run_one_task(
@@ -626,16 +732,16 @@ async def run_suite(cfg: RunConfig) -> None:
     run_root = cfg.out_dir / f"adversarial_citations_{cfg.model}_T{cfg.temperature}".replace("/", "_")
     run_root.mkdir(parents=True, exist_ok=True)
 
-    # Condition clients (same model, same temp)
-    model_client = OpenAIChatCompletionClient(
+    # Condition clients (same model, same temp, same provider)
+    model_client = create_model_client(
+        provider=cfg.provider,
         model=cfg.model,
-        api_key=os.getenv("OPENAI_API_KEY"),
         temperature=cfg.temperature,
     )
 
-    audit_client = OpenAIChatCompletionClient(
+    audit_client = create_model_client(
+        provider=cfg.provider,
         model=cfg.audit_model,
-        api_key=os.getenv("OPENAI_API_KEY"),
         temperature=cfg.audit_temperature,
     )
 
@@ -644,6 +750,7 @@ async def run_suite(cfg: RunConfig) -> None:
         "created_at": utc_now_iso(),
         "repo_commit": safe_git_commit(),
         "config": {
+            "provider": cfg.provider,
             "model": cfg.model,
             "temperature": cfg.temperature,
             "repeats": cfg.repeats,
@@ -700,10 +807,11 @@ async def run_suite(cfg: RunConfig) -> None:
 def build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser()
     p.add_argument("--out", type=str, default="sandbox/runs", help="Output directory root")
-    p.add_argument("--model", type=str, default="gpt-4o", help="Model to test")
+    p.add_argument("--provider", type=str, default="openai", choices=["openai", "openrouter", "groq"], help="Provider: 'openai', 'openrouter', or 'groq'")
+    p.add_argument("--model", type=str, default="gpt-4o", help="Model to test (OpenRouter: 'openai/gpt-4o', Groq: 'llama-3.1-70b-versatile')")
     p.add_argument("--temperature", type=float, default=0.1, help="Generation temperature")
     p.add_argument("--repeats", type=int, default=1, help="Number of repeats of full suite")
-    p.add_argument("--audit-model", type=str, default="gpt-4o-mini", help="Model for LLM auditor")
+    p.add_argument("--audit-model", type=str, default="gpt-4o-mini", help="Model for LLM auditor (OpenRouter: 'openai/gpt-4o-mini', Groq: 'mixtral-8x7b-32768')")
     p.add_argument("--audit-temperature", type=float, default=0.1, help="Auditor temperature")
     p.add_argument("--resolver-audit", action="store_true", help="Enable deterministic resolver audit (PMID/DOI/arXiv/NCT)")
     p.add_argument("--log-level", type=str, default="INFO", help="Logging level")
@@ -720,11 +828,27 @@ def main() -> None:
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
 
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("OPENAI_API_KEY is not set (needed to run empirical model calls).")
+    # Suppress noisy ddgs/primp loggers (non-fatal backend fallback messages)
+    logging.getLogger("ddgs").setLevel(logging.WARNING)
+    logging.getLogger("primp").setLevel(logging.WARNING)
+
+    # Validate API key based on provider
+    provider = args.provider.lower()
+    if provider == "openai":
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY is not set (needed for OpenAI provider).")
+    elif provider == "openrouter":
+        if not os.getenv("OPENROUTER_API_KEY"):
+            raise RuntimeError("OPENROUTER_API_KEY is not set (needed for OpenRouter provider).")
+    elif provider == "groq":
+        if not os.getenv("GROQ_API_KEY"):
+            raise RuntimeError("GROQ_API_KEY is not set (needed for Groq provider).")
+    else:
+        raise ValueError(f"Unknown provider: {provider}. Must be 'openai', 'openrouter', or 'groq'.")
 
     cfg = RunConfig(
         out_dir=Path(args.out),
+        provider=provider,
         model=args.model,
         temperature=float(args.temperature),
         repeats=int(args.repeats),
