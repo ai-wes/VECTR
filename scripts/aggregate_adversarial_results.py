@@ -18,6 +18,15 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 
+AUDIT_FIELDS = (
+    "citation_present",
+    "citation_resolvable",
+    "fabricated_details",
+    "page_or_section_hallucinated",
+    "overall_risk",
+)
+
+
 def safe_get(d: Dict[str, Any], path: List[str], default=None):
     cur: Any = d
     for k in path:
@@ -27,12 +36,49 @@ def safe_get(d: Dict[str, Any], path: List[str], default=None):
     return cur if cur is not None else default
 
 
-def parse_audit(rec: Dict[str, Any]) -> Dict[str, Any]:
-    audit_ok = safe_get(rec, ["audit", "ok"], False)
-    parsed = safe_get(rec, ["audit", "parsed"], None)
-    if not audit_ok or not isinstance(parsed, dict):
-        return None
+def parse_json_response(text: str) -> Dict[str, Any]:
+    """Parse an auditor JSON object, accepting a common fenced-JSON response."""
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[0].strip().lower() in {"```", "```json"}:
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+
+    parsed = json.loads(cleaned)
+    if not isinstance(parsed, dict):
+        raise ValueError("Auditor response must be a JSON object")
     return parsed
+
+
+def parse_audit(rec: Dict[str, Any]) -> Dict[str, Any]:
+    """Return audit labels plus explicit parse provenance without crashing a run."""
+    parsed = safe_get(rec, ["audit", "parsed"], None)
+    status = "parsed"
+    error = None
+
+    if not isinstance(parsed, dict):
+        raw = safe_get(rec, ["audit", "raw"], None)
+        if isinstance(raw, str) and raw.strip():
+            try:
+                parsed = parse_json_response(raw)
+                status = "recovered_from_raw"
+            except Exception as exc:
+                parsed = {}
+                status = "failed"
+                error = str(exc)
+        else:
+            parsed = {}
+            status = "failed"
+            error = "audit.parsed and audit.raw are missing"
+
+    result = {field: parsed.get(field) for field in AUDIT_FIELDS}
+    result["audit_parse_ok"] = status != "failed"
+    result["audit_parse_status"] = status
+    result["audit_parse_error"] = error
+    return result
 
 
 def resolver_success_rate(resolver: Optional[Dict[str, Any]]) -> Optional[float]:
@@ -93,6 +139,9 @@ def main() -> None:
             "fabricated_details": audit["fabricated_details"],
             "page_or_section_hallucinated": audit["page_or_section_hallucinated"],
             "overall_risk": audit["overall_risk"],
+            "audit_parse_ok": audit["audit_parse_ok"],
+            "audit_parse_status": audit["audit_parse_status"],
+            "audit_parse_error": audit["audit_parse_error"],
             "resolver_success_rate": resolver_success_rate(r.get("resolver_audit")),
         })
 
@@ -110,6 +159,9 @@ def main() -> None:
         summaries.append({
             "condition": cond,
             "n_runs": len(g),
+            "n_audited": int(g["audit_parse_ok"].sum()),
+            "audit_parse_recovered": int((g["audit_parse_status"] == "recovered_from_raw").sum()),
+            "audit_parse_failures": int((g["audit_parse_status"] == "failed").sum()),
             "citations_present_pct": pct(g["citation_present"], "yes"),
             "citations_resolvable_pct": pct(g["citation_resolvable"], "yes"),
             "fabricated_details_pct": pct(g["fabricated_details"], "yes"),
@@ -131,6 +183,7 @@ def main() -> None:
     md.append("\n\n## Notes\n")
     md.append("- `resolver_success_rate` is only populated if you ran with `--resolver-audit`.\n")
     md.append("- LLM audit is a strict screener; resolver audit checks existence of PMID/DOI/arXiv/NCT.\n")
+    md.append("- Audit parse recovery/failure counts are explicit; percentages exclude only failed parses.\n")
     (outdir / "table_summary.md").write_text("\n".join(md), encoding="utf-8")
 
 

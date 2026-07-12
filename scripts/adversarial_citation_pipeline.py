@@ -343,6 +343,23 @@ Return JSON only with:
 """
 
 
+def parse_json_response(text: str) -> Dict[str, Any]:
+    """Parse an auditor JSON object, accepting a common fenced-JSON response."""
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[0].strip().lower() in {"```", "```json"}:
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+
+    parsed = json.loads(cleaned)
+    if not isinstance(parsed, dict):
+        raise ValueError("Auditor response must be a JSON object")
+    return parsed
+
+
 async def audit(
     *,
     model_client: OpenAIChatCompletionClient,
@@ -383,10 +400,10 @@ Return your judgment as JSON only.
             final = str(last_msg)
 
     try:
-        parsed = json.loads(final)
+        parsed = parse_json_response(final)
         return {"ok": True, "raw": final, "parsed": parsed}
-    except Exception:
-        return {"ok": False, "raw": final, "parsed": None}
+    except Exception as exc:
+        return {"ok": False, "raw": final, "parsed": None, "error": str(exc)}
 
 
 # --- Deterministic resolver audit (optional, stronger evidence than an LLM judge) ---
