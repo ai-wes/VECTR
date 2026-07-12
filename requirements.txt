@@ -2,6 +2,7 @@ ddgs
 python-dotenv
 httpx
 pandas
+tabulate
 
 autogen-agentchat
 autogen-ext

@@ -29,3 +29,6 @@ Expected outputs (in sandbox/analysis/):
     measured_overhead_summary.json
 
     table_summary.md
+
+`summary_by_condition.csv` and `table_summary.md` disclose the number of audit
+records parsed normally, recovered from fenced JSON, or still unparseable.

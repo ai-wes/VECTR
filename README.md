@@ -25,7 +25,7 @@ Each run record contains:
 - condition: baseline | vectr
 - latency_s: wall-clock latency
 - tool_call_count: number of external tool invocations
-- llm_audit.parsed: structured reliability labels
+- audit.parsed: structured reliability labels
 
 This schema enables independent re-analysis without access to model internals.
 
@@ -39,7 +39,7 @@ schema:
   "latency_s": ...,
   "tool_call_count": ...,
   "assistant_response": "...",
-  "llm_audit": {
+  "audit": {
     "parsed": {
       "citation_present": "...",
       "citation_resolvable": "...",
@@ -50,6 +50,11 @@ schema:
   }
 }
 ```
+
+Aggregation reports `n_audited`, fenced-JSON audit records recovered from the
+raw response, and any remaining parse failures. A malformed auditor response
+therefore cannot crash the full analysis or disappear silently from the
+reported denominator.
 
 Downstream costs are scenario parameters, not measurements.
 
@@ -107,4 +112,3 @@ Contact wes@glassbox-bio.com
 
 **Contributions welcome!** If you'd like to help expand the suite, validate on 
 additional models, or contribute human annotations, please open an issue or PR.
-
